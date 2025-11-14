@@ -1,4 +1,4 @@
-# app.py
+# app.py - Updated for 4-class model with "Not Fruit" detection
 import streamlit as st
 import cv2
 import numpy as np
@@ -7,8 +7,6 @@ from PIL import Image
 import pandas as pd
 from datetime import datetime
 import os
-from ultralytics import YOLO
-
 
 # Page config
 st.set_page_config(
@@ -32,107 +30,29 @@ if 'results_history' not in st.session_state:
 if 'result_counter' not in st.session_state:
     st.session_state.result_counter = len(st.session_state.results_history)
 
-
-# Load models
+# Load model
 @st.cache_resource
-def load_models():
-    """Load both YOLO and ripeness classification models"""
-    # Use YOLOv8 MEDIUM instead of nano - better accuracy
-    yolo_model = YOLO('yolov8m.pt')  # Changed from yolov8n.pt to yolov8m.pt
+def load_model():
+    """Load the trained ripeness classification model"""
+    model_path = 'fruit_ripeness_with_person_rejection.keras'
+    if not os.path.exists(model_path):
+        st.error(f"❌ Model not found: {model_path}")
+        return None
     
-    # Load your ripeness classification model
-    ripeness_model_path = 'fruit_ripeness_multitask_finetuned.keras'
-    if not os.path.exists(ripeness_model_path):
-        st.error(f"❌ Ripeness model not found: {ripeness_model_path}")
-        return None, None
-    
-    ripeness_model = tf.keras.models.load_model(ripeness_model_path)
-    
-    return yolo_model, ripeness_model
+    model = tf.keras.models.load_model(model_path)
+    return model
 
+ripeness_model = load_model()
 
-yolo_model, ripeness_model = load_models()
-
-if yolo_model is None or ripeness_model is None:
+if ripeness_model is None:
     st.stop()
 
-RIPENESS_CLASSES = ['Unripe', 'Ripe', 'Overripe']
+# Updated classes with "Not Fruit"
+RIPENESS_CLASSES = ['Unripe', 'Ripe', 'Overripe', 'Not Fruit']
 FRUIT_TYPES = ['Apple', 'Orange']
 
-# YOLO classes for fruits (from COCO dataset)
-FRUIT_CLASS_IDS = {
-    46: 'banana',
-    47: 'apple',
-    48: 'sandwich',
-    49: 'orange',
-    50: 'broccoli',
-    51: 'carrot',
-    # Add more as needed
-}
-
-# Add this in your Camera tab before the analyze button
-conf_threshold = st.slider("Detection Confidence Threshold", 0.05, 0.50, 0.15, 0.05)
-
-def detect_fruit_with_yolo(image_pil):
-    """
-    Stage 1: Use YOLO to detect if there's a fruit in the image
-    Returns: (has_fruit, cropped_fruit_image, fruit_type_detected, confidence)
-    """
-    try:
-        # Convert PIL to numpy array
-        img_array = np.array(image_pil)
-        
-        # Run YOLO detection - LOWERED confidence threshold for better detection
-        results = yolo_model.predict(
-        source=img_array,
-        classes=[47, 49],
-        conf=conf_threshold,  # Use slider value
-        verbose=False
-        )
-        
-        # Check if any fruits were detected
-        if len(results[0].boxes) == 0:
-            return False, None, None, 0.0
-        
-        # Get the first detected fruit (highest confidence)
-        boxes = results[0].boxes
-        best_box = boxes[0]
-        
-        # Get bounding box coordinates
-        x1, y1, x2, y2 = map(int, best_box.xyxy[0])
-        
-        # Add padding to crop (10% on each side)
-        height, width = img_array.shape[:2]
-        padding = 20
-        x1 = max(0, x1 - padding)
-        y1 = max(0, y1 - padding)
-        x2 = min(width, x2 + padding)
-        y2 = min(height, y2 + padding)
-        
-        # Crop the fruit region with padding
-        cropped_fruit = img_array[y1:y2, x1:x2]
-        
-        # Check if crop is valid
-        if cropped_fruit.size == 0:
-            return False, None, None, 0.0
-            
-        cropped_fruit_pil = Image.fromarray(cropped_fruit)
-        
-        # Get detected class
-        class_id = int(best_box.cls[0])
-        detected_fruit = FRUIT_CLASS_IDS.get(class_id, "unknown")
-        confidence = float(best_box.conf[0])
-        
-        return True, cropped_fruit_pil, detected_fruit, confidence
-        
-    except Exception as e:
-        st.error(f"YOLO detection error: {e}")
-        return False, None, None, 0.0
-
-
-
 def preprocess_image(image_pil):
-    """Convert PIL image to preprocessed tensor for ripeness model"""
+    """Convert PIL image to preprocessed tensor for model"""
     try:
         img = np.array(image_pil)
         
@@ -151,69 +71,54 @@ def preprocess_image(image_pil):
         st.error(f"Error preprocessing image: {e}")
         return None
 
-
-def get_ripeness_prediction(image_pil):
-    """Stage 2: Get ripeness prediction for detected fruit"""
+def analyze_image(image_pil):
+    """
+    Analyze image with the 4-class model (includes "Not Fruit" detection)
+    Returns: (success, result_dict, message)
+    """
     try:
         processed = preprocess_image(image_pil)
         if processed is None:
-            return None
+            return False, None, "❌ Error preprocessing image."
         
+        # Get predictions
         predictions = ripeness_model.predict(processed, verbose=0)
-        ripeness_probs = predictions[0][0]
-        fruit_probs = predictions[1][0]
+        ripeness_probs = predictions[0][0]  # 4 classes
+        fruit_probs = predictions[1][0]     # 2 classes
         
+        # Get top prediction
         ripeness_idx = int(np.argmax(ripeness_probs))
         fruit_idx = int(np.argmax(fruit_probs))
         
-        return {
-            'ripeness': RIPENESS_CLASSES[ripeness_idx],
-            'ripeness_conf': float(ripeness_probs[ripeness_idx]),
+        ripeness_class = RIPENESS_CLASSES[ripeness_idx]
+        ripeness_conf = float(ripeness_probs[ripeness_idx])
+        
+        # Check if it's "Not Fruit"
+        if ripeness_idx == 3:  # "Not Fruit" class
+            return True, {
+                'ripeness': ripeness_class,
+                'ripeness_conf': ripeness_conf,
+                'fruit': 'N/A',
+                'fruit_conf': 0.0,
+                'ripeness_probs': ripeness_probs,
+                'fruit_probs': fruit_probs,
+                'is_fruit': False
+            }, "⚠️ Not a fruit detected (person, object, or background)"
+        
+        # It's a fruit - return fruit type
+        return True, {
+            'ripeness': ripeness_class,
+            'ripeness_conf': ripeness_conf,
             'fruit': FRUIT_TYPES[fruit_idx],
             'fruit_conf': float(fruit_probs[fruit_idx]),
             'ripeness_probs': ripeness_probs,
-            'fruit_probs': fruit_probs
-        }
+            'fruit_probs': fruit_probs,
+            'is_fruit': True
+        }, "✅ Fruit analyzed successfully"
     
     except Exception as e:
-        st.error(f"❌ Ripeness prediction error: {e}")
-        return None
-
-def analyze_image(image_pil):
-    """
-    TEMPORARY: Skip YOLO and directly analyze with ripeness model
-    """
-    # Directly get ripeness prediction without YOLO filtering
-    ripeness_result = get_ripeness_prediction(image_pil)
-    
-    if ripeness_result is None:
-        return False, None, "❌ Error analyzing fruit."
-    
-    # Add dummy YOLO data
-    ripeness_result['yolo_detected'] = 'Assumed Fruit'
-    ripeness_result['yolo_confidence'] = 1.0
-    ripeness_result['cropped_image'] = image_pil  # Use full image
-    
-    return True, ripeness_result, "✅ Fruit analyzed (YOLO temporarily bypassed)"
-
-
-def show_yolo_detection(image_pil):
-    """Visualize YOLO detections with bounding boxes"""
-    img_array = np.array(image_pil)
-    
-    # Run YOLO
-    results = yolo_model.predict(
-        source=img_array,
-        classes=[47, 49],
-        conf=0.25,
-        verbose=False
-    )
-    
-    # Draw boxes on image
-    annotated_image = results[0].plot()  # This draws boxes automatically!
-    
-    return Image.fromarray(annotated_image)
-
+        st.error(f"❌ Analysis error: {e}")
+        return False, None, f"❌ Error: {e}"
 
 def save_result_to_csv(result, source):
     """Save prediction result to CSV and session state"""
@@ -226,10 +131,9 @@ def save_result_to_csv(result, source):
         'Date': datetime.now().strftime("%Y-%m-%d"),
         'Time': datetime.now().strftime("%H:%M:%S"),
         'Source': source,
-        'YOLO_Detected': result.get('yolo_detected', 'N/A'),
-        'YOLO_Confidence': round(result.get('yolo_confidence', 0) * 100, 2),
-        'Fruit_Type': result['fruit'],
-        'Fruit_Confidence': round(result['fruit_conf'] * 100, 2),
+        'Is_Fruit': result.get('is_fruit', True),
+        'Fruit_Type': result.get('fruit', 'N/A'),
+        'Fruit_Confidence': round(result.get('fruit_conf', 0) * 100, 2),
         'Ripeness': result['ripeness'],
         'Ripeness_Confidence': round(result['ripeness_conf'] * 100, 2)
     }
@@ -239,9 +143,8 @@ def save_result_to_csv(result, source):
     df = pd.DataFrame(st.session_state.results_history)
     df.to_csv(CSV_FILE, index=False)
 
-
 # Main tabs
-tab1, tab2, tab3 = st.tabs(["📷 Camera", "📁 Upload", "📋 Recent Results"])
+tab1, tab2, tab3 = st.tabs(["📷 Camera", "📁 Upload", "📊 Dashboard"])
 
 # Tab 1: Camera
 with tab1:
@@ -259,44 +162,47 @@ with tab1:
             image = Image.open(picture)
             
             if st.button("🔍 Analyze Photo", key="analyze_camera", type="primary"):
-                with st.spinner("🔍 Step 1: Detecting fruit..."):
+                with st.spinner("🔍 Analyzing image..."):
                     success, result, message = analyze_image(image)
                 
-                st.info(message)
-                
                 if success:
-                    # Show YOLO detection with bounding box
-                    st.subheader("🎯 Detection Result")
-                    annotated_img = show_yolo_detection(image)
-                    st.image(annotated_img, caption="YOLO Detection with Bounding Box", use_column_width=True)
-                    
-                    # Show cropped fruit
-                    st.subheader("🔍 Cropped Fruit Region")
-                    st.image(result['cropped_image'], caption="Region sent to Ripeness Model", width=250)
-                    
-                    with st.spinner("🔍 Step 2: Analyzing ripeness..."):
+                    # Check if it's "Not Fruit"
+                    if not result['is_fruit']:
+                        st.warning("⚠️ **Not a Fruit Detected!**")
+                        st.error(f"This appears to be: **{result['ripeness']}**")
+                        st.metric("Detection Confidence", f"{result['ripeness_conf']:.1%}")
+                        
+                        st.info("💡 Please capture an image with an apple or orange.")
+                    else:
+                        # It's a fruit - show full results
                         save_result_to_csv(result, "Camera")
-                    
-                    st.success("✓ Analysis Complete & Saved!")
-                    
-                    # Display results
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.metric("🍎 Ripeness", result['ripeness'], f"{result['ripeness_conf']:.1%}")
-                    with col_b:
-                        st.metric("🍊 Fruit Type", result['fruit'], f"{result['fruit_conf']:.1%}")
-                    
-                    with st.expander("📊 Detailed Scores"):
-                        st.write(f"**YOLO Detection:** {result['yolo_detected']} ({result['yolo_confidence']:.1%})")
-                        st.write("\n**Ripeness Breakdown:**")
-                        for i, cls in enumerate(RIPENESS_CLASSES):
-                            st.write(f"  {cls}: {result['ripeness_probs'][i]:.2%}")
-                        st.write("\n**Fruit Type Breakdown:**")
-                        for i, cls in enumerate(FRUIT_TYPES):
-                            st.write(f"  {cls}: {result['fruit_probs'][i]:.2%}")
-                    
-                    st.info(f"💾 Result #{st.session_state.result_counter} saved!")
-
+                        
+                        st.success("✅ Analysis Complete & Saved!")
+                        
+                        # Display main results
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            st.metric("🍎 Ripeness", result['ripeness'], 
+                                     f"↑ {result['ripeness_conf']:.1%}")
+                        with col_b:
+                            st.metric("🍊 Fruit Type", result['fruit'], 
+                                     f"↑ {result['fruit_conf']:.1%}")
+                        
+                        # Detailed scores
+                        with st.expander("📊 Detailed Scores"):
+                            st.write("**Ripeness Breakdown:**")
+                            for i, cls in enumerate(RIPENESS_CLASSES):
+                                st.progress(float(result['ripeness_probs'][i]), 
+                                          text=f"{cls}: {result['ripeness_probs'][i]:.2%}")
+                            
+                            st.write("\n**Fruit Type Breakdown:**")
+                            for i, cls in enumerate(FRUIT_TYPES):
+                                st.progress(float(result['fruit_probs'][i]), 
+                                          text=f"{cls}: {result['fruit_probs'][i]:.2%}")
+                        
+                        st.info(f"💾 Result #{st.session_state.result_counter} saved!")
+                else:
+                    st.error(message)
 
 # Tab 2: Upload
 with tab2:
@@ -309,7 +215,7 @@ with tab2:
         
         if uploaded_file:
             image = Image.open(uploaded_file)
-            st.image(image, use_column_width=True)
+            st.image(image, use_container_width=True)
             st.info("✓ Image uploaded! Click 'Analyze Image' to get results.")
     
     with col2:
@@ -317,43 +223,94 @@ with tab2:
             image = Image.open(uploaded_file)
             
             if st.button("🔍 Analyze Image", key="analyze_upload", type="primary"):
-                with st.spinner("🔍 Step 1: Detecting fruit..."):
+                with st.spinner("🔍 Analyzing image..."):
                     success, result, message = analyze_image(image)
                 
-                st.info(message)
-                
                 if success:
-                    # Show YOLO detection with bounding box
-                    st.subheader("🎯 Detection Result")
-                    annotated_img = show_yolo_detection(image)
-                    st.image(annotated_img, caption="YOLO Detection with Bounding Box", use_column_width=True)
-                    
-                    # Show cropped fruit
-                    st.subheader("🔍 Cropped Fruit Region")
-                    st.image(result['cropped_image'], caption="Region sent to Ripeness Model", width=250)
-                    
-                    with st.spinner("🔍 Step 2: Analyzing ripeness..."):
+                    if not result['is_fruit']:
+                        st.warning("⚠️ **Not a Fruit Detected!**")
+                        st.error(f"This appears to be: **{result['ripeness']}**")
+                        st.metric("Detection Confidence", f"{result['ripeness_conf']:.1%}")
+                        st.info("💡 Please upload an image with an apple or orange.")
+                    else:
                         save_result_to_csv(result, "Upload")
-                    
-                    st.success("✓ Analysis Complete & Saved!")
-                    
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.metric("🍎 Ripeness", result['ripeness'], f"{result['ripeness_conf']:.1%}")
-                    with col_b:
-                        st.metric("🍊 Fruit Type", result['fruit'], f"{result['fruit_conf']:.1%}")
-                    
-                    st.info(f"💾 Result #{st.session_state.result_counter} saved!")
+                        st.success("✅ Analysis Complete & Saved!")
+                        
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            st.metric("🍎 Ripeness", result['ripeness'], 
+                                     f"↑ {result['ripeness_conf']:.1%}")
+                        with col_b:
+                            st.metric("🍊 Fruit Type", result['fruit'], 
+                                     f"↑ {result['fruit_conf']:.1%}")
+                        
+                        with st.expander("📊 Detailed Scores"):
+                            st.write("**Ripeness Breakdown:**")
+                            for i, cls in enumerate(RIPENESS_CLASSES):
+                                st.progress(float(result['ripeness_probs'][i]), 
+                                          text=f"{cls}: {result['ripeness_probs'][i]:.2%}")
+                            
+                            st.write("\n**Fruit Type Breakdown:**")
+                            for i, cls in enumerate(FRUIT_TYPES):
+                                st.progress(float(result['fruit_probs'][i]), 
+                                          text=f"{cls}: {result['fruit_probs'][i]:.2%}")
+                        
+                        st.info(f"💾 Result #{st.session_state.result_counter} saved!")
+                else:
+                    st.error(message)
 
-
-# Tab 3: Recent Results
+# Tab 3: Dashboard
 with tab3:
-    st.header("📋 Recent Results")
+    st.header("📊 Analysis Dashboard")
     
     if len(st.session_state.results_history) > 0:
         df = pd.DataFrame(st.session_state.results_history)
+        
+        # Filter to only fruits (exclude "Not Fruit" detections)
+        df_fruits = df[df['Is_Fruit'] == True]
+        
+        # Summary metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total Scans", len(df))
+        with col2:
+            st.metric("Fruits Detected", len(df_fruits))
+        with col3:
+            st.metric("Non-Fruits Rejected", len(df) - len(df_fruits))
+        with col4:
+            if len(df_fruits) > 0:
+                most_common = df_fruits['Fruit_Type'].mode()[0]
+                st.metric("Most Common", most_common)
+        
+        # Charts
+        if len(df_fruits) > 0:
+            col_a, col_b = st.columns(2)
+            
+            with col_a:
+                st.subheader("Ripeness Distribution")
+                ripeness_counts = df_fruits['Ripeness'].value_counts()
+                st.bar_chart(ripeness_counts)
+            
+            with col_b:
+                st.subheader("Fruit Type Distribution")
+                fruit_counts = df_fruits['Fruit_Type'].value_counts()
+                st.bar_chart(fruit_counts)
+        
+        # Recent results table
+        st.subheader("Recent Results")
         st.dataframe(df.tail(10), use_container_width=True, hide_index=True)
         
+        # Download button
+        csv = df.to_csv(index=False)
+        st.download_button(
+            label="📥 Download Full Data (CSV)",
+            data=csv,
+            file_name=f"fruit_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+        
+        # Clear data button
         col1, col2 = st.columns([1, 3])
         with col1:
             if st.button("🗑️ Clear All Data", type="secondary"):
@@ -365,6 +322,5 @@ with tab3:
     else:
         st.info("📭 No results yet. Take a photo or upload an image!")
 
-
 st.markdown("---")
-st.markdown("Made with ❤️ using YOLOv8, TensorFlow & Streamlit")
+st.markdown("Made with ❤️ using MobileNetV2, TensorFlow & Streamlit")
