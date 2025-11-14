@@ -182,18 +182,7 @@ def parse_temp_hum(line):
 
 # -------------------- SHELF-LIFE (WHOLE DAYS) -------------------- #
 def combined_shelf_life(ripeness, temp, hum):
-    """
-    Returns whole-day shelf life string based on ripeness + environment.
-    Base:
-      Unripe: 5-7
-      Ripe: 2-3
-      Overripe: 0
-    Environment multipliers -> then round to whole days:
-      hot (>30): 0.6
-      ideal (20-30 and 50-80): 1.0
-      cool (<20 and 55-65): 1.2
-      other: 0.8
-    """
+   
     base = {
         "Unripe": (5, 7),
         "Ripe": (2, 3),
@@ -230,7 +219,7 @@ tab1, tab2, tab3 = st.tabs(["📸 Analyze Fruit (Camera + Upload)", "📡 Shelf 
 
 # -------------------- TAB 1: Analyze (camera + upload) -------------------- #
 with tab1:
-    st.header("📸 Analyze Fruit (Camera + Upload)")
+    st.header(" Analyze Fruit (Camera + Upload)")
     left_col, right_col = st.columns([1, 1])
 
     with left_col:
@@ -253,7 +242,7 @@ with tab1:
             st.error(f"Cannot open camera image: {e}")
 
     if image:
-        if st.button("🔍 Analyze Image"):
+        if st.button(" Analyze Image"):
             with st.spinner("Analyzing image..."):
                 result = analyze_image(image)
 
