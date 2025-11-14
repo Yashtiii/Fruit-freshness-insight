@@ -1,6 +1,18 @@
-ID,Timestamp,Date,Time,Source,Is_Fruit,Fruit_Type,Fruit_Confidence,Ripeness,Ripeness_Confidence
-1,2025-11-14 23:59:16,2025-11-14,23:59:16,Camera,True,Apple,99.71,Ripe,70.79
-2,2025-11-15 00:00:59,2025-11-15,00:00:59,Camera,True,Apple,95.09,Unripe,48.88
-3,2025-11-15 00:04:25,2025-11-15,00:04:25,Camera,True,Apple,98.71,Ripe,48.9
-4,2025-11-15 00:06:24,2025-11-15,00:06:24,Upload,True,Apple,73.43,Ripe,50.22
-5,2025-11-15 00:07:06,2025-11-15,00:07:06,Upload,True,Apple,62.43,Unripe,42.33
+ID,Timestamp,Date,Time,Source,Is_Fruit,Fruit_Type,Fruit_Confidence,Ripeness,Ripeness_Confidence,Temp_C,Humidity_pct,Temperature_C
+1,2025-11-14 23:59:16,2025-11-14,23:59:16,Camera,True,Apple,99.71,Ripe,70.79,,,
+2,2025-11-15 00:00:59,2025-11-15,00:00:59,Camera,True,Apple,95.09,Unripe,48.88,,,
+3,2025-11-15 00:04:25,2025-11-15,00:04:25,Camera,True,Apple,98.71,Ripe,48.9,,,
+4,2025-11-15 00:06:24,2025-11-15,00:06:24,Upload,True,Apple,73.43,Ripe,50.22,,,
+5,2025-11-15 00:07:06,2025-11-15,00:07:06,Upload,True,Apple,62.43,Unripe,42.33,,,
+6,2025-11-15 00:57:52,2025-11-15,00:57:52,Upload,True,Apple,57.38,Overripe,37.55,,,
+7,2025-11-15 01:15:20,,,Camera/Upload,True,Apple,57.38,Overripe,37.55,,,
+8,2025-11-15 01:16:00,,,Combined(IoT),True,Apple,57.38,Overripe,37.55,23.5,53.0,
+9,2025-11-15 01:30:03,,,Camera/Upload,True,Apple,78.45,Unripe,47.23,,,
+10,2025-11-15 01:30:16,,,Combined(IoT),True,Apple,78.45,Unripe,47.23,,53.0,23.6
+11,2025-11-15 01:35:08,,,Camera/Upload,True,Apple,57.38,Overripe,37.55,,,
+12,2025-11-15 01:35:27,,,Combined(IoT),True,Apple,57.38,Overripe,37.55,,54.0,23.6
+13,2025-11-15 01:35:56,,,Camera/Upload,True,Apple,96.65,Ripe,54.72,,,
+14,2025-11-15 01:36:30,,,Camera/Upload,False,N/A,0.0,Not Fruit,49.98,,,
+15,2025-11-15 01:36:41,,,Combined(IoT),False,N/A,0.0,Not Fruit,49.98,,53.0,23.7
+16,2025-11-15 01:37:05,,,Camera/Upload,True,Apple,78.45,Unripe,47.23,,,
+17,2025-11-15 01:38:05,,,Combined(IoT),True,Apple,78.45,Unripe,47.23,,53.0,23.7
