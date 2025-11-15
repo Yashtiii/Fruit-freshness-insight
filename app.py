@@ -1,4 +1,3 @@
-# app.py - Final (4-class model) with Camera+Upload, IoT (ESP32 DHT11) and Dashboard
 import streamlit as st
 import cv2
 import numpy as np
@@ -10,7 +9,6 @@ import os
 import time
 import re
 
-# Optional serial import (pyserial), app works without it (IoT button will warn)
 try:
     import serial
     SERIAL_AVAILABLE = True
