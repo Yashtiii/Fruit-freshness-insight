@@ -74,6 +74,7 @@ ripeness_filter = st.sidebar.multiselect(
 df_filtered = df_filtered[df_filtered['Ripeness'].isin(ripeness_filter)]
 
 
+
 # Key Metrics
 st.header("📈 Key Metrics")
 
@@ -95,6 +96,111 @@ with col4:
     st.metric("Most Common Fruit", most_common_fruit)
 
 st.divider()
+
+
+
+# === INSIGHTS SECTION ===
+#yukti added
+st.header("🧠 Automated Insights")
+
+insights = []
+
+# Most frequent fruit
+if len(df_filtered) > 0:
+    freq_fruit = df_filtered['Fruit_Type'].mode()[0]
+    insights.append(f"Most frequently analyzed fruit: **{freq_fruit}**")
+
+# Ripeness trends
+if len(df_filtered['Ripeness'].unique()) > 1:
+    ripe_counts = df_filtered['Ripeness'].value_counts()
+    top_ripeness = ripe_counts.index[0]
+    insights.append(f"Most common ripeness detected: **{top_ripeness}**")
+
+# Confidence alerts
+low_conf = df_filtered[df_filtered['Fruit_Confidence'] < 50]
+if len(low_conf) > 0:
+    insights.append("⚠️ Several analyzes have **low fruit confidence (<50%)**. Check lighting or camera.")
+
+# Source insights
+source_counts = df_filtered['Source'].value_counts()
+if len(source_counts) > 0:
+    top_source = source_counts.index[0]
+    insights.append(f"Most used source: **{top_source}**")
+
+# Display insights
+for tip in insights:
+    st.info(tip)
+
+
+
+#yukti added
+#confidence vs ripeness
+st.header("🎯 Confidence vs Ripeness")
+
+fig_scatter = px.scatter(
+    df_filtered,
+    x='Fruit_Confidence',
+    y='Ripeness_Confidence',
+    color='Ripeness',
+    size='Fruit_Confidence',
+    hover_data=['Fruit_Type', 'Source', 'Date'],
+    title="Fruit vs Ripeness Confidence Relationship",
+    color_discrete_map={'Unripe': '#90EE90', 'Ripe': '#FFD700', 'Overripe': '#FF6347'}
+)
+st.plotly_chart(fig_scatter, use_container_width=True)
+
+
+#yukti added
+#source donut chart
+st.header("📷 Source Distribution (Camera vs Upload)")
+
+source_counts = df_filtered['Source'].value_counts()
+
+fig_source2 = px.pie(
+    values=source_counts.values,
+    names=source_counts.index,
+    hole=0.5,
+    title="Data Source Breakdown"
+)
+fig_source2.update_traces(textinfo='percent+label')
+st.plotly_chart(fig_source2, use_container_width=True)
+
+
+
+
+#yukti added
+# Rolling averages and WoW change
+if 'Date' in df_filtered.columns:
+    tmp = df_filtered.copy()
+    tmp = tmp.set_index('Date').sort_index()
+    # if you have daily aggregation fields
+    daily = tmp.resample('D').agg({
+        'Fruit_Confidence':'mean',
+        'Ripeness_Confidence':'mean'
+    }).fillna(method='ffill')
+
+    daily['fc_7d'] = daily['Fruit_Confidence'].rolling(7, min_periods=1).mean()
+    daily['rc_7d'] = daily['Ripeness_Confidence'].rolling(7, min_periods=1).mean()
+
+    st.subheader("7-day rolling average (confidence)")
+    fig_roll = go.Figure()
+    fig_roll.add_trace(go.Scatter(x=daily.index, y=daily['fc_7d'], name='Fruit Conf 7d'))
+    fig_roll.add_trace(go.Scatter(x=daily.index, y=daily['rc_7d'], name='Ripeness Conf 7d'))
+    fig_roll.update_layout(yaxis_title="Confidence %")
+    st.plotly_chart(fig_roll, use_container_width=True)
+
+    # week over week percent change (last available)
+    if len(daily) >= 14:
+        last_week = daily['Fruit_Confidence'].iloc[-7:].mean()
+        prev_week = daily['Fruit_Confidence'].iloc[-14:-7].mean()
+        wow = (last_week - prev_week) / prev_week * 100 if prev_week else 0
+        st.metric("Fruit Confidence WoW", f"{wow:.1f}%", delta=f"{(last_week - prev_week):.2f}")
+
+
+
+
+
+
 
 
 # Row 1: Fruit Distribution and Ripeness Distribution
@@ -202,62 +308,26 @@ with col2:
 st.divider()
 
 
-# Row 4: Time Series Analysis (if enough data)
-if 'Date' in df_filtered.columns and len(df_filtered) > 1:
-    st.header("📅 Time Series Analysis")
-    
-    # Daily counts
-    daily_counts = df_filtered.groupby('Date').size().reset_index(name='Count')
-    fig_time = px.line(
-        daily_counts,
-        x='Date',
-        y='Count',
-        title="Analyses Over Time",
-        markers=True
-    )
-    fig_time.update_layout(xaxis_title="Date", yaxis_title="Number of Analyses")
-    st.plotly_chart(fig_time, use_container_width=True)
-    
-    # Fruit type over time
-    daily_fruit = df_filtered.groupby(['Date', 'Fruit_Type']).size().reset_index(name='Count')
-    fig_time_fruit = px.line(
-        daily_fruit,
-        x='Date',
-        y='Count',
-        color='Fruit_Type',
-        title="Fruit Type Analyses Over Time",
-        markers=True
-    )
-    st.plotly_chart(fig_time_fruit, use_container_width=True)
-
-st.divider()
-
-
-# Row 5: Data Source Analysis
-st.header("📷 Source Analysis")
-
-source_counts = df_filtered['Source'].value_counts()
-fig_source = px.bar(
-    x=source_counts.index,
-    y=source_counts.values,
-    title="Analysis by Source",
-    labels={'x': 'Source', 'y': 'Count'},
-    color=source_counts.index
-)
-st.plotly_chart(fig_source, use_container_width=True)
-
-st.divider()
-
 
 # Detailed Data Table
 st.header("📋 Detailed Data")
 
-# Show filtered data
-st.dataframe(
-    df_filtered.sort_values('ID', ascending=False),
-    use_container_width=True,
-    hide_index=True
-)
+# Prepare table
+table = df_filtered.sort_values('ID', ascending=False).copy()
+
+# Define highlighter function
+def highlight_low_conf(row):
+    color = 'background-color: #ffb3b3'  # Light red
+    default = [''] * len(row)
+
+    # If fruit confidence exists and is < 50 → highlight whole row
+    if 'Fruit_Confidence' in row and pd.notna(row['Fruit_Confidence']) and row['Fruit_Confidence'] < 50:
+        return [color] * len(row)
+
+    return default
+
+# Show styled table
+st.write(table.style.apply(highlight_low_conf, axis=1))
 
 # Download filtered data
 csv_download = df_filtered.to_csv(index=False)
@@ -267,6 +337,9 @@ st.download_button(
     file_name=f"filtered_fruit_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
     mime="text/csv"
 )
+
+
+
 
 # Refresh data button
 if st.button("🔄 Refresh Data"):
