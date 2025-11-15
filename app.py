@@ -1,4 +1,4 @@
-# app.py - MERGED AND FIXED VERSION
+# app.py - CLEANED VERSION (2 tabs only)
 import streamlit as st
 import cv2
 import numpy as np
@@ -58,7 +58,6 @@ FRUIT_TYPES = ["Apple", "Orange"]
 
 # -------------------- IMAGE UTILITIES -------------------- #
 def preprocess_image(image_pil):
-    """Convert PIL image to model tensor"""
     try:
         img = np.array(image_pil)
         if img.ndim == 2:
@@ -73,7 +72,6 @@ def preprocess_image(image_pil):
         return None
 
 def analyze_image(image_pil):
-    """Return a dictionary with analysis result (including is_fruit flag)."""
     try:
         proc = preprocess_image(image_pil)
         if proc is None:
@@ -114,20 +112,26 @@ def analyze_image(image_pil):
 
 # -------------------- SAVE/CSV -------------------- #
 def save_result_to_csv(result, source, temp=None, hum=None):
+    """Save result with temperature and humidity"""
     st.session_state.result_counter += 1
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # ✅ FIXED: Properly save temp and humidity
     entry = {
         "ID": st.session_state.result_counter,
         "Timestamp": ts,
+        "Date": datetime.now().strftime("%Y-%m-%d"),
+        "Time": datetime.now().strftime("%H:%M:%S"),
         "Source": source,
         "Is_Fruit": result.get("is_fruit", True),
         "Fruit_Type": result.get("fruit", "N/A"),
         "Fruit_Confidence": round(result.get("fruit_conf", 0) * 100, 2),
         "Ripeness": result.get("ripeness", "N/A"),
         "Ripeness_Confidence": round(result.get("ripeness_conf", 0) * 100, 2),
-        "Temperature_C": temp,
-        "Humidity_pct": hum
+        "Temperature_C": temp if temp is not None else None,  # ✅ Store temp
+        "Humidity_pct": hum if hum is not None else None      # ✅ Store humidity
     }
+    
     st.session_state.results_history.append(entry)
     pd.DataFrame(st.session_state.results_history).to_csv(CSV_FILE, index=False)
 
@@ -196,7 +200,7 @@ def combined_shelf_life(ripeness, temp, hum):
     return f"{adj_low}-{adj_high} days"
 
 # -------------------- UI / TABS -------------------- #
-tab1, tab2, tab3 = st.tabs(["📸 Analyze Fruit", "📡 Shelf Life (IoT)", "📊 Dashboard"])
+tab1, tab2 = st.tabs(["📸 Analyze Fruit", "📡 Shelf Life (IoT)"])
 
 # -------------------- TAB 1: Analyze -------------------- #
 with tab1:
@@ -212,13 +216,13 @@ with tab1:
     if upload_img:
         try:
             image = Image.open(upload_img)
-            st.image(image, use_container_width=True)
+            st.image(image, use_container_width="stretch")
         except Exception as e:
             st.error(f"Cannot open uploaded image: {e}")
     elif camera_img:
         try:
             image = Image.open(camera_img)
-            st.image(image, use_container_width=True)
+            st.image(image, use_container_width="stretch")
         except Exception as e:
             st.error(f"Cannot open camera image: {e}")
 
@@ -231,7 +235,9 @@ with tab1:
                 st.error("Analysis failed.")
             else:
                 st.session_state.last_analysis = result
-                save_result_to_csv(result, "Camera/Upload")
+                
+                # ✅ Save WITHOUT temp/humidity first
+                save_result_to_csv(result, "Camera/Upload", temp=None, hum=None)
 
                 if not result["is_fruit"]:
                     st.warning("⚠️ Not a fruit detected. Please provide an apple or orange image.")
@@ -255,7 +261,7 @@ with tab1:
                             st.progress(float(result["fruit_probs"][i]), 
                                        text=f"{cls}: {result['fruit_probs'][i]:.2%}")
 
-                    st.info(f"💾 Result #{st.session_state.result_counter} saved. Go to IoT tab for shelf life.")
+                    st.info(f"💾 Result #{st.session_state.result_counter} saved. Go to IoT tab to add temperature/humidity.")
 
 # -------------------- TAB 2: IoT -------------------- #
 with tab2:
@@ -288,52 +294,21 @@ with tab2:
                         shelf = combined_shelf_life(last["ripeness"], temp, hum)
                         st.success(f"📦 Estimated Shelf Life: {shelf}")
 
-                        save_result_to_csv(last, "Combined(IoT)", temp=temp, hum=hum)
+                        # ✅ UPDATE THE LAST ROW WITH TEMP/HUMIDITY
+                        if len(st.session_state.results_history) > 0:
+                            # Update the most recent entry
+                            st.session_state.results_history[-1]["Temperature_C"] = temp
+                            st.session_state.results_history[-1]["Humidity_pct"] = hum
+                            st.session_state.results_history[-1]["Source"] = "Combined(IoT)"
+                            
+                            # Save updated CSV
+                            pd.DataFrame(st.session_state.results_history).to_csv(CSV_FILE, index=False)
+                            
+                            st.success("✅ Temperature and humidity saved to CSV!")
+                        
                 except Exception as e:
                     st.error(f"❌ Serial error: {e}")
 
-# -------------------- TAB 3: Dashboard -------------------- #
-with tab3:
-    st.header("📊 Dashboard & Recent Results")
-
-    if len(st.session_state.results_history) == 0:
-        st.info("📭 No results yet — analyze some images first.")
-    else:
-        df = pd.DataFrame(st.session_state.results_history)
-        fruits_df = df[df["Is_Fruit"] == True]
-
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Scans", len(df))
-        col2.metric("Fruits Detected", len(fruits_df))
-        col3.metric("Non-Fruits Rejected", len(df) - len(fruits_df))
-        if len(fruits_df) > 0:
-            most_common = fruits_df["Fruit_Type"].mode().iloc[0]
-            col4.metric("Most Common Fruit", most_common)
-        else:
-            col4.metric("Most Common Fruit", "N/A")
-
-        if len(fruits_df) > 0:
-            st.subheader("Ripeness Distribution")
-            st.bar_chart(fruits_df["Ripeness"].value_counts())
-
-            st.subheader("Fruit Type Distribution")
-            st.bar_chart(fruits_df["Fruit_Type"].value_counts())
-
-        st.subheader("Recent Entries")
-        st.dataframe(df.tail(15), use_container_width=True, hide_index=True)
-
-        csv = df.to_csv(index=False)
-        st.download_button("📥 Download CSV", data=csv,
-                          file_name=f"fruit_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                          mime="text/csv")
-
-        if st.button("🗑️ Clear All Data"):
-            if os.path.exists(CSV_FILE):
-                os.remove(CSV_FILE)
-            st.session_state.results_history = []
-            st.session_state.result_counter = 0
-            st.session_state.last_analysis = None
-            st.rerun()
-
 st.markdown("---")
 st.markdown("Made with ❤️ using TensorFlow, MobileNetV2 & Streamlit (ESP32 IoT)")
+st.info("📊 Go to the Dashboard page (sidebar) to view detailed analytics!")
