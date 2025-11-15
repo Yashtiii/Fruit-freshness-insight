@@ -1,0 +1,4 @@
+ID,Timestamp,Date,Time,Source,Fruit_Type,Fruit_Confidence,Ripeness,Ripeness_Confidence
+1,2025-11-05 12:14:27,2025-11-05,12:14:27,Camera,Orange,56.08,Ripe,75.94
+2,2025-11-05 12:15:42,2025-11-05,12:15:42,Upload,Apple,87.96,Overripe,92.82
+3,2025-11-05 12:17:52,2025-11-05,12:17:52,Upload,Apple,68.1,Overripe,60.35
