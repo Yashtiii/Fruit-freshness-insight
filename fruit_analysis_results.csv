@@ -1,4 +1,6 @@
-ID,Timestamp,Date,Time,Source,Fruit_Type,Fruit_Confidence,Ripeness,Ripeness_Confidence
-1,2025-11-05 12:14:27,2025-11-05,12:14:27,Camera,Orange,56.08,Ripe,75.94
-2,2025-11-05 12:15:42,2025-11-05,12:15:42,Upload,Apple,87.96,Overripe,92.82
-3,2025-11-05 12:17:52,2025-11-05,12:17:52,Upload,Apple,68.1,Overripe,60.35
+ID,Timestamp,Date,Time,Source,Fruit_Type,Fruit_Confidence,Ripeness,Ripeness_Confidence,Is_Fruit,Temperature_C,Humidity_pct
+1,2025-11-05 12:14:27,2025-11-05,12:14:27,Camera,Orange,56.08,Ripe,75.94,,,
+2,2025-11-05 12:15:42,2025-11-05,12:15:42,Upload,Apple,87.96,Overripe,92.82,,,
+3,2025-11-05 12:17:52,2025-11-05,12:17:52,Upload,Apple,68.1,Overripe,60.35,,,
+4,2025-11-15 16:11:44,,,Camera/Upload,Apple,58.28,Unripe,40.39,True,,
+5,2025-11-15 16:12:46,,,Camera/Upload,Apple,98.76,Ripe,64.74,True,,
