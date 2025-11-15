@@ -1,4 +1,4 @@
-# app.py
+# app.py - FIXED VERSION
 import streamlit as st
 import pandas as pd
 import os
@@ -8,27 +8,24 @@ import plotly.express as px
 # ---------- CONFIG ----------
 st.set_page_config(page_title="Fruit Freshness Insights", layout="wide", initial_sidebar_state="expanded")
 
-DATA_CSV = "fruit_analysis_results.csv"   # adjust if your CSV path is different
-IMAGES_DIR = "."  # folder containing saved result images (adjust if different)
+DATA_CSV = "fruit_analysis_results.csv"
+IMAGES_DIR = "."
 
 # ---------- UTILS ----------
 def load_data(csv_path=DATA_CSV):
     if not os.path.exists(csv_path):
         return pd.DataFrame()
     df = pd.read_csv(csv_path)
-    # Try normalize timestamps column if present
     if "timestamp" in df.columns:
         try:
             df["timestamp"] = pd.to_datetime(df["timestamp"])
         except Exception:
             pass
     else:
-        # create a default monotonically increasing index timestamp
         df["timestamp"] = pd.to_datetime(df.index.map(lambda i: datetime.now()))
     return df
 
 def latest_image_path(images_dir=IMAGES_DIR):
-    # look for likely image filenames (you have "WhatsApp Image..." and "result1.jpg" in screenshots)
     images = [os.path.join(images_dir, f) for f in os.listdir(images_dir)
               if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))]
     if not images:
@@ -52,11 +49,20 @@ def shelf_life_label(days_est):
 def nice_metric(value, unit=""):
     return f"{value} {unit}".strip()
 
+# ✅ NEW: Safe float conversion helper
+def safe_float(value, default="—"):
+    """Safely convert to float, return default if fails"""
+    if value is None or value == "" or value == "—":
+        return default
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
 # ---------- PAGE LAYOUT ----------
 st.markdown(
     """
     <style>
-    /* subtle background + card style */
     .stApp { background-color: #0f1724; color: #e6eef8; }
     .card { padding: 18px; border-radius: 12px; background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); box-shadow: 0 6px 18px rgba(2,6,23,0.6); }
     .kpi { font-size: 22px; color: #9fb7d9; }
@@ -83,7 +89,6 @@ with left:
     if last_row is None:
         st.info("No entries found in the CSV. Run detection or add rows to `fruit_analysis_results.csv`.")
     else:
-        # If columns exist in your CSV, adapt names: fruit_type, ripeness, temperature, humidity, estimated_shelf_life
         fruit_type = last_row.get("fruit_type", last_row.get("Fruit Type", "Unknown"))
         ripeness = last_row.get("ripeness", last_row.get("Ripeness", "Unknown"))
         temp = last_row.get("temperature", last_row.get("Temperature (C)", last_row.get("Temperature", "—")))
@@ -101,12 +106,21 @@ with left:
         st.markdown("</div>", unsafe_allow_html=True)
 
         st.write("")
-        # two small metrics
+        # ✅ FIXED: Safe conversion for temperature and humidity
         c1, c2 = st.columns(2)
         with c1:
-            st.metric("Temperature (°C)", nice_metric(round(float(temp), 1)) if pd.notna(temp) else "—")
+            temp_val = safe_float(temp)
+            if temp_val != "—":
+                st.metric("Temperature (°C)", nice_metric(round(temp_val, 1)))
+            else:
+                st.metric("Temperature (°C)", "—")
+        
         with c2:
-            st.metric("Humidity (%)", nice_metric(round(float(humidity), 1)) if pd.notna(humidity) else "—")
+            hum_val = safe_float(humidity)
+            if hum_val != "—":
+                st.metric("Humidity (%)", nice_metric(round(hum_val, 1)))
+            else:
+                st.metric("Humidity (%)", "—")
 
         st.write("")
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -121,17 +135,15 @@ with left:
             except Exception:
                 st.caption(f"Last measured: {timestamp}")
 
-        # action
         st.write("")
         if st.button("🔄 Refresh data"):
-            st.experimental_rerun()
+            st.rerun()  # Changed from st.experimental_rerun()
 
 with middle:
     st.markdown("### Timeline & Trends")
     if df.empty:
         st.info("No historical data to show.")
     else:
-        # Convert timestamp to datetime if possible
         if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
             try:
                 df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -171,23 +183,25 @@ with right:
         st.write("- No recent data.")
     else:
         insights = []
-        # sample rules - adjust to your data model
-        try:
-            t = float(temp)
-            h = float(humidity)
-            e = float(est_shelf) if est_shelf not in (None, "", "—") else None
-            if t >= 28:
+        # ✅ FIXED: Safe conversion in insights
+        temp_val = safe_float(temp, None)
+        hum_val = safe_float(humidity, None)
+        shelf_val = safe_float(est_shelf, None)
+        
+        if temp_val is not None:
+            if temp_val >= 28:
                 insights.append("Temperature is high — consider cooling to extend shelf life.")
-            elif t <= 8:
+            elif temp_val <= 8:
                 insights.append("Temperature is low — watch for chill damage on sensitive fruits.")
-            if h >= 80:
-                insights.append("High humidity — risk of mold; ensure good ventilation.")
-            if e is not None and e <= 2:
-                insights.append("Shelf life very short — recommend immediate consumption or fast sale.")
-            if ripeness and str(ripeness).lower() in ("unripe", "raw"):
-                insights.append("Fruit is unripe — store in a cool, humid place for slower ripening, or room-temp to accelerate.")
-        except Exception:
-            pass
+        
+        if hum_val is not None and hum_val >= 80:
+            insights.append("High humidity — risk of mold; ensure good ventilation.")
+        
+        if shelf_val is not None and shelf_val <= 2:
+            insights.append("Shelf life very short — recommend immediate consumption or fast sale.")
+        
+        if ripeness and str(ripeness).lower() in ("unripe", "raw"):
+            insights.append("Fruit is unripe — store in a cool, humid place for slower ripening, or room-temp to accelerate.")
 
         if insights:
             for i in insights:
@@ -221,12 +235,18 @@ else:
             st.metric("Distinct fruits", "—")
     with cols[2]:
         if "ripeness" in df.columns:
-            st.metric("Most common ripeness", df["ripeness"].mode().iat[0])
+            st.metric("Most common ripeness", df["ripeness"].mode().iat[0] if len(df["ripeness"].mode()) > 0 else "—")
         else:
             st.metric("Most common ripeness", "—")
     with cols[3]:
         if "estimated_shelf_life_days" in df.columns:
-            st.metric("Avg shelf life (days)", round(df["estimated_shelf_life_days"].astype(float).mean(), 1))
+            # ✅ FIXED: Safe conversion for avg shelf life
+            try:
+                avg_shelf = df["estimated_shelf_life_days"].apply(lambda x: safe_float(x, None))
+                avg_shelf = avg_shelf[avg_shelf.notna()].mean()
+                st.metric("Avg shelf life (days)", round(avg_shelf, 1) if pd.notna(avg_shelf) else "—")
+            except:
+                st.metric("Avg shelf life (days)", "—")
         else:
             st.metric("Avg shelf life (days)", "—")
 
